@@ -1,0 +1,40 @@
+DECISION LEDGER V0.1
+
+PRE-SIGNED DECISION RECORD
+        |
+        | human Ed25519 signatures over record digest
+        | (no seq / prev_hash)
+        v
++-----------------------------------+
+| validate record + human signatures|
+| maker/confirmer + mode rules      |
+| server public/private key match   |
++-----------------+-----------------+
+                  |
+                  | verify complete existing ledger first
+                  v
++-----------------------------------+
+| assign next seq + prev_hash       |
+| SHA-256 chain entry               |
+| Ed25519 server-sign entry hash    |
+| reject > 4 MiB                    |
++-----------------+-----------------+
+                  |
+                  | append + fsync
+                  v
+             LEDGER.JSONL
+                  |
+                  v
++-----------------------------------+
+| standalone verifier               |
+| sequence + prev hash              |
+| human signatures                  |
+| recomputed hash                   |
+| server signature                  |
++-----------------------------------+
+
+PUBLIC KEYRING ----------------------^
+
+Rule: History is append-only. Verification must work without the application, database or network.
+
+Operational boundary: one writer owns a ledger file; V0.1 does not provide multi-process append locking.

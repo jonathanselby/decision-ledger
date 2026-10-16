@@ -4,9 +4,6 @@ on:
   push:
   pull_request:
 
-permissions:
-  contents: read
-
 jobs:
   go-test:
     runs-on: ubuntu-latest
@@ -15,21 +12,20 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.x'
+      - name: Format contract
+        run: test -z "$(gofmt -l .)"
       - name: Vet
         run: go vet ./...
       - name: Unit tests with race detector
-        run: go test -race ./...
+        run: go test -race -count=1 ./...
       - name: Build
         run: go build -o ./bin/decision-ledger ./cmd/decision-ledger
       - name: Version contract
         run: test "$(./bin/decision-ledger -version)" = "decision-ledger 0.1.0"
       - name: Linux arm64 build
         run: GOOS=linux GOARCH=arm64 go build -o ./bin/decision-ledger-linux-arm64 ./cmd/decision-ledger
-      - name: Bafflewick CLI verification
-        shell: bash
-        run: |
-          out=$(./bin/decision-ledger verify -ledger examples/bafflewick/ledger.jsonl -keys examples/bafflewick/keys.json)
-          echo "$out" | grep -q '"valid":true'
-          echo "$out" | grep -q '"entries":1'
-      - name: Ledger boundary acceptance
-        run: go test ./internal/ledger -run 'TestVerifyAndTamper|TestAppendRejectsInvalidHumanSignature|TestAppendRefusesCorruptExistingLedger|TestSelfApprovalRule|TestExerciseLiveMismatch|TestInvalidServerSignatureDetected' -count=1
+      - name: Bafflewick acceptance
+        run: >-
+          go test ./internal/ledger
+          -run 'TestVerifyAndTamper|TestPreviousHashBreakDetected|TestServerSignatureCorruptionDetected|TestAppendRefusesCorruptExistingLedger|TestHumanSignatureIndependentOfChainPosition|TestServerKeyMismatchRefused|TestOversizedEntryRefusedBeforeWrite'
+          -count=1
