@@ -6,8 +6,6 @@
 
 `decision-ledger` is a small Go component for appending and independently verifying a tamper-evident sequence of human decisions. It is designed for systems that need a portable audit history that can survive loss of the application database or network.
 
-It is independently usable; CRAB is one consumer, not part of the component contract.
-
 ## What V0.1 proves
 
 V0.1 demonstrates a deliberately narrow provenance model:
