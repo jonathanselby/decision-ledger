@@ -1,7 +1,7 @@
 # Decision Ledger — File and Signing Format
 
 **Format version:** 0.1  
-**Reviewed:** 2026-10-17
+**Reviewed:** 2026-10-22
 
 This file defines the portable verification contract. A verifier should be able to implement these rules without the originating application or database.
 
@@ -39,6 +39,8 @@ The human digest is `SHA-256(JSON(recordCore))`.
 
 Human signatures use Ed25519 over the 32-byte record digest. A `Signature` contains either a `key_id` plus base64 Ed25519 `value`, or an explicit `missing_reason`. `value` and `missing_reason` are mutually exclusive.
 
+When a signature value is present, `key_id` must equal the named `maker` or `confirmer` whose provenance is being asserted. A different valid key may not sign on behalf of that named identity. When a signature is absent, `missing_reason` records that absence and `key_id` must be empty; this is explicit absence, not cryptographic provenance.
+
 A confirmed record requires a confirmer. If maker and confirmer are the same person, `self_approval` must be true and `self_approval_reason` non-empty. A non-confirmed record may not carry confirmer or self-approval fields that could make it appear confirmed.
 
 ## Chain binding
@@ -57,7 +59,7 @@ The server signature therefore binds the already human-signed decision to its le
 
 A standalone verifier processes the JSONL file from first line to last and checks: valid JSON/record contract; monotonically increasing sequence beginning at 1; previous-hash linkage; maker provenance; confirmer provenance when confirmed; recomputed entry hash; and server signature.
 
-Any failure makes the ledger invalid. Verification does not repair, skip or rewrite history.
+Any failure makes the ledger invalid. A malformed JSON line terminates verification because later chain position cannot be reconstructed without guessing past unreadable history. Verification does not repair, skip or rewrite history.
 
 ## Append algorithm
 

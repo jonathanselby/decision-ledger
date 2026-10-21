@@ -105,6 +105,60 @@ func TestAppendRejectsInvalidHumanSignature(t *testing.T) {
 	}
 }
 
+func TestSignerIdentityMustMatchKeyID(t *testing.T) {
+	mp, mk := keyPair(t)
+	cp, ck := keyPair(t)
+	sp, sk := keyPair(t)
+	keys := keyring(mp, cp, sp)
+
+	t.Run("maker", func(t *testing.T) {
+		r := signedRecord(t, mk, ck)
+		wrong, err := SignRecord(r, ck)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.MakerSignature = Signature{KeyID: "c", Value: wrong}
+		if _, err := Append(t.TempDir()+"/ledger.jsonl", r, "server", sk, keys); err == nil || !strings.Contains(err.Error(), "does not match signer") {
+			t.Fatalf("maker accepted a different identity key: %v", err)
+		}
+	})
+
+	t.Run("confirmer", func(t *testing.T) {
+		r := signedRecord(t, mk, ck)
+		wrong, err := SignRecord(r, mk)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.ConfirmerSignature = Signature{KeyID: "m", Value: wrong}
+		if _, err := Append(t.TempDir()+"/ledger.jsonl", r, "server", sk, keys); err == nil || !strings.Contains(err.Error(), "does not match signer") {
+			t.Fatalf("confirmer accepted a different identity key: %v", err)
+		}
+	})
+}
+
+func TestMissingSignatureReasonRemainsSupported(t *testing.T) {
+	sp, sk := keyPair(t)
+	keys := Keyring{"server": base64.StdEncoding.EncodeToString(sp)}
+	r := Record{
+		Timestamp:    time.Date(2026, 10, 17, 1, 2, 3, 0, time.UTC),
+		TimeStatus:   "trusted",
+		IncidentID:   "INC-1",
+		IncidentMode: "live",
+		ItemMode:     "live",
+		ItemType:     "comment",
+		ItemID:       "comment-1",
+		Status:       "comment",
+		Maker:        "operator-1",
+		Data:         json.RawMessage(`{"note":"recorded during key outage"}`),
+		MakerSignature: Signature{
+			MissingReason: "signing key unavailable",
+		},
+	}
+	if _, err := Append(t.TempDir()+"/ledger.jsonl", r, "server", sk, keys); err != nil {
+		t.Fatalf("documented missing-signature path was rejected: %v", err)
+	}
+}
+
 func TestAppendRefusesCorruptExistingLedger(t *testing.T) {
 	mp, mk := keyPair(t)
 	cp, ck := keyPair(t)
@@ -204,6 +258,20 @@ func TestPreviousHashBreakDetected(t *testing.T) {
 	f.Close()
 	if res.Valid || !containsError(res.Errors, "previous hash mismatch") {
 		t.Fatalf("broken previous hash was not identified: %+v", res)
+	}
+}
+
+func TestMalformedEntryStopsVerification(t *testing.T) {
+	keys := Keyring{}
+	res := Verify(strings.NewReader("{not-json}\n{\"seq\":2}\n"), keys)
+	if res.Valid {
+		t.Fatal("malformed ledger verified")
+	}
+	if res.Entries != 1 {
+		t.Fatalf("verification continued past malformed history: %+v", res)
+	}
+	if len(res.Errors) != 1 || !strings.Contains(res.Errors[0], "malformed") {
+		t.Fatalf("unexpected malformed-entry result: %+v", res)
 	}
 }
 

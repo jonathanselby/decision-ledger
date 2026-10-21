@@ -72,7 +72,9 @@ The exact field domain is normative in `FORMAT.md`.
 - a base64 Ed25519 signature plus `key_id`; or
 - an explicit `missing_reason` when no signature exists.
 
-A signature and missing reason cannot both be present.
+A signature and missing reason cannot both be present. A missing signature carries no key ID.
+
+For an actual signature, `key_id` must equal the named maker/confirmer identity for that role before the key is looked up and the Ed25519 signature is checked. This prevents a valid key for one identity from asserting another identity's provenance.
 
 Maker signature/absence is checked for every record. Confirmer signature/absence is checked for confirmed records.
 
@@ -117,7 +119,7 @@ The first entry uses sequence 1 and an empty previous hash.
 2. validate record invariants;
 3. load server public key and prove it matches the private key;
 4. compute human record digest;
-5. verify maker and, where required, confirmer provenance;
+5. verify maker and, where required, confirmer provenance, including signer/key identity binding;
 6. verify complete existing ledger and recover its tail;
 7. assign chain position;
 8. compute hash and server signature;
@@ -130,17 +132,17 @@ An oversized entry is refused before the ledger file is opened for append.
 
 `Verify(io.Reader, Keyring)` requires no filesystem path, database, network or private key.
 
-For each line it checks:
+For each readable line it checks:
 
 - JSON parse;
 - sequence continuity;
 - previous-hash linkage;
 - record invariants;
-- human signatures/absence reasons;
+- maker/confirmer identity binding and human signatures/absence reasons;
 - recomputed entry hash;
 - server public key and signature.
 
-Any error sets `Valid=false`; verification does not repair or skip history.
+Any error sets `Valid=false`; verification does not repair or skip history. A malformed JSON line terminates verification immediately because continuing would require guessing the missing chain state and would only generate secondary errors.
 
 The scanner accepts up to the documented entry limit plus small delimiter/headroom.
 
@@ -196,6 +198,7 @@ Known limits:
 The design makes several different changes observable:
 
 - changing decision content invalidates human signatures and chain hash;
+- changing a named maker/confirmer without the matching identity key invalidates provenance;
 - changing human signature metadata changes the chain hash;
 - changing sequence or previous hash changes the chain hash;
 - changing the chain hash invalidates the server signature;
@@ -212,12 +215,15 @@ This is tamper evidence, not proof that the original decision was correct or tha
 | previous-hash break detected | `TestPreviousHashBreakDetected` |
 | server-signature corruption detected | `TestServerSignatureCorruptionDetected` |
 | invalid human signature refused | `TestAppendRejectsInvalidHumanSignature` |
+| signer identity bound to key ID | `TestSignerIdentityMustMatchKeyID` |
 | corrupt ledger cannot be extended | `TestAppendRefusesCorruptExistingLedger` |
 | server key mismatch refused | `TestServerKeyMismatchRefused` |
 | explicit self-approval rule | `TestSelfApprovalRule` |
+| explicit missing-signature reason remains supported | `TestMissingSignatureReasonRemainsSupported` |
 | unconfirmed record cannot look confirmed | `TestUnconfirmedRecordCannotLookConfirmed` |
 | live/exercise separation | `TestExerciseLiveMismatch` |
 | human signature independent of chain position | `TestHumanSignatureIndependentOfChainPosition` |
+| malformed history stops verification | `TestMalformedEntryStopsVerification` |
 | oversize entry refused before file creation | `TestOversizedEntryRefusedBeforeWrite` |
 | standalone verification | `Verify(io.Reader, Keyring)` exercised throughout verifier tests |
 | Go/race/build/ARM64/Bafflewick | `.github/workflows/test.yml` |

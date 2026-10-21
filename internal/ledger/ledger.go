@@ -116,11 +116,11 @@ func Append(path string, r Record, serverKeyID string, priv ed25519.PrivateKey, 
 	if err != nil {
 		return Entry{}, refusal(err)
 	}
-	if err = verifyUserSignature(r.MakerSignature, digest, keys); err != nil {
+	if err = verifyUserSignature(r.MakerSignature, r.Maker, digest, keys); err != nil {
 		return Entry{}, refusal(fmt.Errorf("maker signature: %w", err))
 	}
 	if r.Status == "confirmed" {
-		if err = verifyUserSignature(r.ConfirmerSignature, digest, keys); err != nil {
+		if err = verifyUserSignature(r.ConfirmerSignature, r.Confirmer, digest, keys); err != nil {
 			return Entry{}, refusal(fmt.Errorf("confirmer signature: %w", err))
 		}
 	}
@@ -174,7 +174,7 @@ func Verify(r io.Reader, keys Keyring) VerifyResult {
 		var e Entry
 		if err := json.Unmarshal(sc.Bytes(), &e); err != nil {
 			res.add(fmt.Sprintf("entry %d malformed: %v", res.Entries, err))
-			continue
+			return res
 		}
 		seq++
 		if e.Seq != seq {
@@ -191,11 +191,11 @@ func Verify(r io.Reader, keys Keyring) VerifyResult {
 		if err != nil {
 			res.add(fmt.Sprintf("entry %d record digest: %v", res.Entries, err))
 		} else {
-			if err := verifyUserSignature(e.Record.MakerSignature, digest, keys); err != nil {
+			if err := verifyUserSignature(e.Record.MakerSignature, e.Record.Maker, digest, keys); err != nil {
 				res.add(fmt.Sprintf("entry %d maker signature: %v", res.Entries, err))
 			}
 			if e.Record.Status == "confirmed" {
-				if err := verifyUserSignature(e.Record.ConfirmerSignature, digest, keys); err != nil {
+				if err := verifyUserSignature(e.Record.ConfirmerSignature, e.Record.Confirmer, digest, keys); err != nil {
 					res.add(fmt.Sprintf("entry %d confirmer signature: %v", res.Entries, err))
 				}
 			}
@@ -314,15 +314,24 @@ func publicKey(k Keyring, id string) (ed25519.PublicKey, error) {
 	return ed25519.PublicKey(b), nil
 }
 
-func verifyUserSignature(s Signature, d [32]byte, k Keyring) error {
+func verifyUserSignature(s Signature, signerID string, d [32]byte, k Keyring) error {
 	if s.Value == "" {
 		if s.MissingReason == "" {
 			return errors.New("signature or missing_reason required")
+		}
+		if s.KeyID != "" {
+			return errors.New("missing signature cannot carry key_id")
 		}
 		return nil
 	}
 	if s.MissingReason != "" {
 		return errors.New("signature and missing_reason are mutually exclusive")
+	}
+	if s.KeyID == "" {
+		return errors.New("key_id required")
+	}
+	if s.KeyID != signerID {
+		return fmt.Errorf("key_id %q does not match signer %q", s.KeyID, signerID)
 	}
 	pub, err := publicKey(k, s.KeyID)
 	if err != nil {
